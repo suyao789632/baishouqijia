@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>指・感受（MQTT）</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+
+  <style>
+    body {
+      margin: 0; padding: 0; overflow: hidden;
+      background-color: #050510;
+      font-family: 'Helvetica Neue', Arial, 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
+      user-select: none;
+    }
+
+    /* 開始按鈕 */
+    #startButton {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      padding: 15px 50px; font-size: 24px; color: white; font-weight: bold;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-radius: 50px; cursor: pointer; z-index: 100;
+      backdrop-filter: blur(10px); transition: 0.3s; letter-spacing: 2px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+    }
+    #startButton:hover {
+      background: rgba(255, 255, 255, 0.25);
+      box-shadow: 0 0 25px rgba(255, 255, 255, 0.6);
+      transform: translate(-50%, -50%) scale(1.05);
+    }
+
+    /* 【新增】連接裝置按鈕（左上角） */
+    #deviceButton {
+      position: absolute; top: 16px; left: 16px; z-index: 100;
+      padding: 8px 18px; font-size: 14px; color: white; cursor: pointer;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 20px;
+    }
+    #deviceButton:hover { background: rgba(255, 255, 255, 0.2); }
+
+    /* 操作說明面板 */
+    #instruction-panel {
+      position: absolute; bottom: 0; width: 100%; height: 90px;
+      background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0));
+      display: flex; justify-content: space-evenly; align-items: center;
+      color: rgba(255, 255, 255, 0.9);
+      pointer-events: none; opacity: 0; transition: opacity 1.5s;
+    }
+    .instr-box { text-align: center; }
+    .instr-title {
+      font-size: 12px; color: #888; margin-bottom: 8px; letter-spacing: 1.5px; text-transform: uppercase;
+    }
+    .instr-action { font-size: 16px; text-shadow: 0 0 8px rgba(255,255,255,0.3); }
+    .left-hand { color: #a0ffe0; }
+    .right-hand { color: #ffadad; }
+  </style>
+</head>
+<body>
+
+  <button id="startButton">ENTER UNIVERSE</button>
+  <button id="deviceButton">連接裝置</button>
+
+  <div id="instruction-panel">
+    <div class="instr-box">
+      <div class="instr-title">Left Hand (Wood / Echo)</div>
+      <div class="instr-action left-hand">上下滑動　刮奏 &nbsp;|&nbsp; 左右移動　回聲</div>
+    </div>
+    <div class="instr-box">
+      <div class="instr-title">Right Hand (Metal / Gravity)</div>
+      <div class="instr-action right-hand">捏住　陶片上升 &nbsp;|&nbsp; 放開　爆發、陶片落下</div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+  <script src="remote_mqtt.js"></script>
+  <script src="sketch.js"></script>
+
+</body>
+</html>
