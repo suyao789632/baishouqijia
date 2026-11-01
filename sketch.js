@@ -51,9 +51,9 @@ function setup() {
     setupSound();
     started = true;
     startBtn.style.display = 'none';
-    const panel = document.getElementById('instruction-panel');
-    if (panel) panel.style.opacity = '1';
+    showHelp();
   };
+  setupHud();
   const devBtn = document.getElementById('deviceButton');
   if (devBtn) devBtn.onclick = async () => {
     if (Device.connected) { await Device.disconnect(); devBtn.textContent = '連接裝置'; }
@@ -297,27 +297,40 @@ function drawHands() {
   for (let i = 1; i < Device.N; i++) line(i * width / Device.N, 0, i * width / Device.N, height);
 }
 
-// 右下角：裝置狀態＋一排 5 格高度（被抓住的那格加粗外框，不靠顏色）
+// 右上角裝置面板（HTML）：收起來只看狀態，展開看 5 格高度（被抓住的那格外框變粗，不靠顏色）
+let helpTimer = null;
+function showHelp() {
+  const panel = document.getElementById('instruction-panel');
+  if (!panel) return;
+  panel.classList.add('show');
+  clearTimeout(helpTimer);
+  helpTimer = setTimeout(() => panel.classList.remove('show'), 12000);
+}
+function setupHud() {
+  const hud = document.getElementById('hud'), bars = document.getElementById('hudBars');
+  if (!hud) return;
+  document.getElementById('hudToggle').onclick = () => hud.classList.toggle('open');
+  document.getElementById('helpButton').onclick = showHelp;
+  for (let k = 1; k <= Device.N; k++) bars.insertAdjacentHTML('beforeend', '<div class="bar"><div class="fill"></div><span>' + k + '</span></div>');
+}
 function drawDeviceMap() {
-  const s = 30, gap = 4, pad = 14, w = s * Device.N + gap * (Device.N - 1);
-  const x0 = width - w - pad, y0 = height - s - pad - 96;
-  push();
-  textFont('sans-serif'); textSize(11); noStroke(); fill(255, 160); textAlign(RIGHT, BOTTOM);
+  if (frameCount % 4) return;
+  const ok = Device.isAlive() && Device.protoOk();
   let status;
   if (!Device.connected) status = '裝置：未連接';
   else if (!Device.isAlive()) status = '裝置：沒有回應';
-  else if (!Device.protoOk()) status = '裝置：韌體版本不對（' + Device.firmware + '）';
-  else status = '裝置：正常 ' + Device.firmware;
-  text(status, x0 + w, y0 - 6);
-  const ok = Device.isAlive() && Device.protoOk();
-  for (let k = 1; k <= Device.N; k++) {
-    const x = x0 + (k - 1) * (s + gap), y = y0, h = ok ? Device.heightOf(k) : 0;
-    stroke(255, 90); strokeWeight(1); noFill(); rect(x, y, s, s);
-    noStroke(); fill(255, 200); rect(x + 1, y + s - 1 - (s - 2) * h, s - 2, (s - 2) * h);
-    fill(255, 230); textAlign(LEFT, TOP); text(k, x + 3, y + 2);
-    if (ok && Device.isGrabbed(k)) { noFill(); stroke(255); strokeWeight(3); rect(x - 3, y - 3, s + 6, s + 6); }
-  }
-  pop();
+  else if (!Device.protoOk()) status = '裝置：韌體不對';
+  else status = '裝置：正常';
+  const st = document.getElementById('hudStatus');
+  if (!st) return;
+  if (st.textContent !== status) st.textContent = status;
+  document.getElementById('hudDot').classList.toggle('ok', ok);
+  const bars = document.querySelectorAll('#hudBars .bar');
+  bars.forEach((b, i) => {
+    const k = i + 1;
+    b.firstChild.style.height = (ok ? Device.heightOf(k) * 100 : 0) + '%';
+    b.classList.toggle('grab', ok && Device.isGrabbed(k));
+  });
 }
 
 function keyPressed() {

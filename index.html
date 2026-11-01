@@ -33,45 +33,74 @@
       transform: translate(-50%, -50%) scale(1.05);
     }
 
-    /* 【新增】連接裝置按鈕（左上角） */
-    #deviceButton {
-      position: absolute; top: 16px; left: 16px; z-index: 100;
-      padding: 8px 18px; font-size: 14px; color: white; cursor: pointer;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 20px;
+    /* 右上角裝置面板：平常收成一顆小膠囊，點一下展開 */
+    #hud {
+      position: absolute; top: 16px; right: 16px; z-index: 100;
+      color: rgba(232, 233, 246, 0.9); font-size: 13px;
+      background: rgba(20, 20, 40, 0.55); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 18px;
+      overflow: hidden; min-width: 150px;
     }
-    #deviceButton:hover { background: rgba(255, 255, 255, 0.2); }
+    #hudToggle {
+      all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px; width: 100%; box-sizing: border-box; letter-spacing: 1px;
+    }
+    #hudDot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid #fff; }
+    #hudDot.ok { background: #fff; }
+    #hudArrow { margin-left: auto; font-size: 14px; transition: transform 0.25s; }
+    #hud.open #hudArrow { transform: rotate(90deg); }
+    #hudBody { display: none; padding: 4px 14px 14px; }
+    #hud.open #hudBody { display: block; }
+    #hudBars { display: flex; gap: 6px; margin-bottom: 12px; }
+    .bar {
+      position: relative; width: 26px; height: 44px; border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.35); overflow: hidden;
+    }
+    .bar.grab { border: 3px solid #fff; }
+    .bar .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(255, 255, 255, 0.75); }
+    .bar span { position: absolute; top: 2px; left: 0; right: 0; text-align: center; font-size: 11px; mix-blend-mode: difference; }
+    .hudBtn {
+      all: unset; cursor: pointer; display: block; text-align: center; margin-top: 6px;
+      width: 100%; box-sizing: border-box; padding: 6px 0; border-radius: 12px; font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    .hudBtn:hover { background: rgba(255, 255, 255, 0.15); }
 
-    /* 操作說明面板 */
+    /* 操作說明：上方中間一張小卡，開始後 12 秒自己淡出，按「操作說明」再叫出來 */
     #instruction-panel {
-      position: absolute; bottom: 0; width: 100%; height: 90px;
-      background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0));
-      display: flex; justify-content: space-evenly; align-items: center;
-      color: rgba(255, 255, 255, 0.9);
-      pointer-events: none; opacity: 0; transition: opacity 1.5s;
+      position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 28px; padding: 12px 26px;
+      background: rgba(20, 20, 40, 0.55); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 18px;
+      color: rgba(232, 233, 246, 0.9);
+      pointer-events: none; opacity: 0; transition: opacity 1.2s;
     }
+    #instruction-panel.show { opacity: 1; }
     .instr-box { text-align: center; }
-    .instr-title {
-      font-size: 12px; color: #888; margin-bottom: 8px; letter-spacing: 1.5px; text-transform: uppercase;
-    }
-    .instr-action { font-size: 16px; text-shadow: 0 0 8px rgba(255,255,255,0.3); }
-    .left-hand { color: #a0ffe0; }
-    .right-hand { color: #ffadad; }
+    .instr-title { font-size: 11px; color: #9a9ab8; margin-bottom: 6px; letter-spacing: 3px; text-transform: uppercase; }
+    .instr-action { font-size: 15px; letter-spacing: 1px; white-space: nowrap; }
   </style>
 </head>
 <body>
 
   <button id="startButton">ENTER UNIVERSE</button>
-  <button id="deviceButton">連接裝置</button>
+  <div id="hud">
+    <button id="hudToggle"><span id="hudDot"></span><span id="hudStatus">裝置：未連接</span><span id="hudArrow">▸</span></button>
+    <div id="hudBody">
+      <div id="hudBars"></div>
+      <button id="deviceButton" class="hudBtn">連接裝置</button>
+      <button id="helpButton" class="hudBtn">操作說明</button>
+    </div>
+  </div>
 
   <div id="instruction-panel">
     <div class="instr-box">
       <div class="instr-title">Wave</div>
-      <div class="instr-action left-hand">揮手　吹起風、撥開星點 &nbsp;|&nbsp; 手的高度　彈出音</div>
+      <div class="instr-action">揮手吹起風、撥開星點 · 手的高度彈出音</div>
     </div>
     <div class="instr-box">
       <div class="instr-title">Together</div>
-      <div class="instr-action right-hand">手在哪一欄　那一片陶片亮燈 &nbsp;|&nbsp; 對方抓陶片　星空炸開</div>
+      <div class="instr-action">手在哪一欄，那片陶片亮燈 · 對方抓陶片，星空炸開</div>
     </div>
   </div>
 
