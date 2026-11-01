@@ -1,59 +1,35 @@
-// 《指・感受》HTML 版 ＋ 一排 5 片可以被抓的陶片
-// 版本：v2.0（2026-10-31）  對應韌體 Row5TouchWave v3.0（118軟結構TPU/一排五片陶片_觸碰波浪）
-// 以陳書瑤的 p5 作品（editor.p5js.org/susan20050705/sketches/oXS2teNXt）為基礎。
-// 【新增】標記的地方是和裝置連動的部分，其他維持原作（雙手手勢、聲音、粒子都沒有改）。
-// 九宮格 v2.7 的版本留在 HTML版_指感受/，沒有改動。
+// 《擺手起家》虛擬畫面：揮手吹出風場（照「擺手起家 波動模擬器」的互動）
+// 版本：v3.0（2026-11-01）
+// 雙手版（左手木琴、右手捏住）保留在 HTML版_指感受_一排五片/sketch.js，沒有改動。
 //
-// 裝置連動（照「擺手起家 波動模擬器」的規則）：
-//   畫面左右平均分成 5 欄 = 一排 5 片陶片（x 軸）
-//   陶片的實際高度 = 它在畫面上那顆光點的 y 位置；光點越過木琴的音階，就輕輕響一聲
-//   虛擬端的手在哪一欄撥粒子 → 實體那一片亮提示燈，邀請現場的人來抓
-//   現場的人抓住陶片 → 那一片立刻停住（韌體做），畫面上它的光點把星星吸過去、越吸越強（蓄力）
-//   放開 → 在那片的光點炸開星空＋手碟和弦；如果是「回應了提示燈」，多一圈慢慢擴散的漣漪
-//   陶片自己跑一排波浪（網頁送 T）；網頁沒接時，韌體自己跑一樣的波浪
-//   畫面右下角的小圖：每片的編號、高度條、被抓住的外框（不靠顏色）
+// 互動：
+//   鏡頭看到手在「揮」→ 手的動作吹出一陣風，把星點往揮的方向吹開（不分左右手，兩隻手都可以）
+//   手在畫面哪一欄（左右分 5 欄）→ 實體那一片亮提示燈，邀請現場的人來抓
+//   手的高度 → 畫面由下到上是一條音階，手經過哪一條線就彈出那個音
+//   每片陶片在畫面上是一顆光點：x = 它那一欄，y = 它的高度；光點經過音階線也會響
+//   現場有人抓住陶片 → 那顆光點把星點吸過去（越抓越久吸越強，外圈的弧 = 蓄力）
+//   放開 → 在那顆光點炸開星空＋和弦；如果抓的時候提示燈正亮著（回應了對方），多一圈慢慢擴散的漣漪
+// 裝置連線用 Device（USB 版 device.js、Apps Script 版 Remote、MQTT 版 remote_mqtt.js 都可以，用法一樣）。
 
-// === 參數設定 ===
-const VIDEO_W = 320;
-const VIDEO_H = 240;
-const PINCH_THRESHOLD = 60;
-const PINCH_FULL_MS = 2000;   // 【新增】捏住多久陶片升到頂（和黑洞強度同步）
+// ===== 參數 =====
+const VIDEO_W = 320, VIDEO_H = 240;
+const PARTICLES = 900;
+const Y_LOW = 0.9, Y_HIGH = 0.1;         // 陶片最低 → 畫面 90% 高；最高 → 10%（相對座標）
+const WAVE_MIN_SPEED = 6;                 // 手每一格移動超過這麼多像素才算「在揮」
+const WIND_RADIUS = 260;                  // 風吹得到的範圍（以 1200 寬的畫面為準）
+const WIND_POWER = 0.09;                  // 風力
+const SCALE = ['D3', 'A3', 'Bb3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'C5'];   // 手碟 D Kurd
+const COLORS = [[25, 25, 112], [65, 105, 225], [30, 191, 255], [255, 215, 0], [255, 140, 0], [72, 61, 139]];
 
-// === 粒子與流場 ===
-let particles = [];
-let cols, rows, flowField, scl = 60, zoff = 0;
-let maxParticles = 1500;
 let started = false;
-
-// === 手部追蹤 ===
-let video;
-let handPose;
-let hands = [];
-let rightHandIndex = -1;
-let leftHandIndex = -1;
-let rightHandPos = { x: -1000, y: -1000 };
-let leftHandPos = { x: -1000, y: -1000 };
-let isPinching = false, wasPinching = false;
-let holdStartTime = 0;
-let blackHoleStrength = 0;
-let ripples = [];
-
-// 平滑係數：越小越滑順，但反應會慢一點（0.1 ~ 0.3 較佳）
-let smoothFactor = 0.2;
-
-// === 聲音 ===
-let handpanSynth, xylophoneSynth, reverb, delayEffect;
-let limiter, compressor;
-let currentXyloNote = "";
-let lastXyloTrigger = 0;
-
-// 星空色系
-let starryColors = [
-  [25, 25, 112], [65, 105, 225], [30, 191, 255],
-  [255, 215, 0], [255, 140, 0], [72, 61, 139]
-];
-let handpanScale = ["D4", "F4", "A4", "Bb4", "C5", "D5", "E5", "F5", "A5"];
-let xyloScale = ["D3", "F3", "G3", "A3", "C4", "D4", "F4", "G4", "A4", "C5", "D5", "F5", "G5"];
+let video, handPose, hands = [];
+let parts = [], ripples = [];
+let lineFlash = new Array(SCALE.length).fill(0);
+let handState = [];                        // 每隻手：{x, y, vx, vy, note, lastPlay, waving}
+let shardNote = [-1, -1, -1, -1, -1], shardPlay = [0, 0, 0, 0, 0];
+let hintUntil = [0, 0, 0, 0, 0];
+let voices = null;
+let K = 1;                                 // 畫面縮放（以 1200 寬為準）
 
 function preload() {
   handPose = ml5.handPose({ flipped: true, maxHands: 2 });
@@ -61,491 +37,294 @@ function preload() {
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-
+  K = width / 1200;
   video = createCapture(VIDEO);
   video.size(VIDEO_W, VIDEO_H);
   video.hide();
-
-  handPose.detectStart(video, gotHands);
-
-  initFlowField();
-
-  for (let i = 0; i < maxParticles; i++) {
-    particles.push(new Particle(random(width), random(height), true));
-  }
-
+  handPose.detectStart(video, r => { hands = r; });
+  for (let i = 0; i < PARTICLES; i++) parts.push(spawn(true));
   background(10, 10, 30);
 
-  // === 聲音架構 ===
-  limiter = new Tone.Limiter(-1).toDestination();
-  compressor = new Tone.Compressor({
-    threshold: -20, ratio: 3, attack: 0.05, release: 0.2
-  }).connect(limiter);
-
-  reverb = new Tone.Reverb({ decay: 4, wet: 0.5 }).connect(compressor);
-  delayEffect = new Tone.FeedbackDelay("8n", 0).connect(reverb);
-
-  handpanSynth = new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 6,
-    oscillator: { type: "sine" },
-    envelope: { attack: 0.01, decay: 0.8, sustain: 0.05, release: 2 }
-  }).connect(reverb);
-  handpanSynth.volume.value = -2;
-
-  xylophoneSynth = new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 6,
-    oscillator: { type: "sine" },
-    envelope: { attack: 0.005, decay: 0.2, sustain: 0, release: 1.0 }
-  }).connect(delayEffect);
-  xylophoneSynth.volume.value = -2;
-
-  const startBtn = document.getElementById("startButton");
-  if (startBtn) {
-    startBtn.onclick = async () => {
-      await Tone.start();
-      started = true;
-      startBtn.style.display = "none";
-      let panel = document.getElementById("instruction-panel");
-      if (panel) panel.style.opacity = "1";
-      fullscreen(true);
-    };
-  }
-
-  // 【新增】連接裝置
-  const devBtn = document.getElementById("deviceButton");
-  if (devBtn) {
-    devBtn.onclick = async () => {
-      if (Device.connected) {
-        await Device.disconnect();
-        devBtn.textContent = "連接裝置";
-      } else if (await Device.connect()) {
-        devBtn.textContent = "中斷裝置";
-      }
-    };
-  }
-
-  // 【新增】現場的人抓住／放開陶片（韌體回報 G / P）
-  Device.onGrab = (k, answered) => {
-    if (!started) return;
-    const c = shardPoint(k);
-    ripples.push(new Ripple(c.x, c.y, 80));
+  const startBtn = document.getElementById('startButton');
+  if (startBtn) startBtn.onclick = async () => {
+    await Tone.start();
+    setupSound();
+    started = true;
+    startBtn.style.display = 'none';
+    const panel = document.getElementById('instruction-panel');
+    if (panel) panel.style.opacity = '1';
   };
-  Device.onRelease = (k, charge, answered) => {
-    if (!started) return;
-    releaseShard(k, charge, answered);
+  const devBtn = document.getElementById('deviceButton');
+  if (devBtn) devBtn.onclick = async () => {
+    if (Device.connected) { await Device.disconnect(); devBtn.textContent = '連接裝置'; }
+    else if (await Device.connect()) devBtn.textContent = '中斷裝置';
   };
+
+  Device.onGrab = (k) => { if (started) { const c = shardPoint(k); ripples.push({ x: c.x, y: c.y, r: 0, a: 0.8, w: 2, sp: 6, fade: 0.03 }); } };
+  Device.onRelease = (k, charge, answered) => { if (started) releaseShard(k, charge, answered); };
 }
 
-function gotHands(results) {
-  hands = results;
-  rightHandIndex = -1;
-  leftHandIndex = -1;
-  for (let i = 0; i < hands.length; i++) {
-    let label = hands[i].handedness;
-    if (label === 'Right') rightHandIndex = i;
-    else if (label === 'Left') leftHandIndex = i;
+// ===== 聲音：每片陶片一個聲部，加一個給手；左右聲道跟著 x =====
+function setupSound() {
+  if (voices) return;
+  const limiter = new Tone.Limiter(-1).toDestination();
+  const reverb = new Tone.Reverb({ decay: 4, wet: 0.45 }).connect(limiter);
+  voices = [];
+  for (let i = 0; i < 6; i++) {
+    const pan = new Tone.Panner(0).connect(reverb);
+    const s = new Tone.PolySynth(Tone.Synth, {
+      maxPolyphony: 4, oscillator: { type: i === 5 ? 'triangle' : 'sine' },
+      envelope: { attack: 0.01, decay: 0.8, sustain: 0.05, release: 1.8 },
+    }).connect(pan);
+    s.volume.value = -9;
+    voices.push({ s, pan });
   }
 }
-
-function draw() {
-  if (!started) return;
-
-  // 背景半透明，留下殘影
-  background(10, 10, 30, 50);
-
-  updateHandLogic();
-  updateDevice();   // 【新增】
-
-  // 流場計算
-  let yoff = 0;
-  for (let y = 0; y < rows; y++) {
-    let xoff = 0;
-    for (let x = 0; x < cols; x++) {
-      let index = x + y * cols;
-      let angle = noise(xoff, yoff, zoff) * TWO_PI * 2;
-      let v = flowField[index];
-      v.set(cos(angle), sin(angle));
-      v.mult(0.3);
-      xoff += 0.1;
-    }
-    yoff += 0.1;
-  }
-  zoff += 0.001;
-
-  drawDeviceGlow();   // 【新增】陶片高度在畫面上的微光
-  drawVisuals();
-
-  let repelRadius = 0;
-  if (leftHandIndex !== -1) {
-    repelRadius = map(leftHandPos.x, 0, width, 180, 350);
-  }
-
-  for (let p of particles) {
-    p.follow(flowField);
-    // 右手引力
-    p.applyAttraction(rightHandPos.x, rightHandPos.y, blackHoleStrength);
-    // 【新增】被抓住的陶片：它的光點把星星吸過去，蓄力越多吸越強
-    for (const g of grabbedPoints) p.applyAttraction(g.x, g.y, g.s);
-    // 左手斥力
-    if (leftHandIndex !== -1) {
-      p.applyRepulsion(leftHandPos.x, leftHandPos.y, repelRadius);
-    }
-    p.update();
-    p.show();
-  }
-
-  for (let i = ripples.length - 1; i >= 0; i--) {
-    ripples[i].update();
-    ripples[i].show();
-    if (ripples[i].finished()) ripples.splice(i, 1);
-  }
-
-  drawDeviceMap();   // 【新增】右下角小地圖
+function play(vi, note, vel, dur, xRel) {
+  if (!voices) return;
+  const v = voices[vi];
+  v.pan.pan.value = (xRel - 0.5) * 1.6;
+  v.s.triggerAttackRelease(note, dur, undefined, vel);
 }
 
-function updateHandLogic() {
-  // --- 右手 ---
-  if (rightHandIndex !== -1) {
-    let hand = hands[rightHandIndex];
-    let indexTip = hand.keypoints[8];
-    let thumbTip = hand.keypoints[4];
-
-    let tx = map(indexTip.x, 0, VIDEO_W, 0, width);
-    let ty = map(indexTip.y, 0, VIDEO_H, 0, height);
-
-    rightHandPos.x = lerp(rightHandPos.x, tx, smoothFactor);
-    rightHandPos.y = lerp(rightHandPos.y, ty, smoothFactor);
-
-    let dx = indexTip.x - thumbTip.x;
-    let dy = indexTip.y - thumbTip.y;
-    let pinchDistSq = dx * dx + dy * dy;
-    let currentPinchState = (pinchDistSq < PINCH_THRESHOLD * PINCH_THRESHOLD);
-
-    if (currentPinchState && !wasPinching) {
-      isPinching = true;
-      holdStartTime = millis();
-    } else if (!currentPinchState && wasPinching) {
-      isPinching = false;
-      triggerHandpanExplosion();
-    }
-    wasPinching = currentPinchState;
-  }
-
-  // --- 左手 ---
-  if (leftHandIndex !== -1) {
-    let hand = hands[leftHandIndex];
-    let indexTip = hand.keypoints[8];
-
-    let tx = map(indexTip.x, 0, VIDEO_W, 0, width);
-    let ty = map(indexTip.y, 0, VIDEO_H, 0, height);
-
-    leftHandPos.x = lerp(leftHandPos.x, tx, smoothFactor);
-    leftHandPos.y = lerp(leftHandPos.y, ty, smoothFactor);
-
-    // 音高（用平滑後的 Y）
-    let noteIndex = floor(map(leftHandPos.y, height, 0, 0, xyloScale.length));
-    noteIndex = constrain(noteIndex, 0, xyloScale.length - 1);
-    let targetNote = xyloScale[noteIndex];
-
-    // 音符切換間隔至少 80 毫秒，避免連續觸發
-    if (targetNote !== currentXyloNote && millis() - lastXyloTrigger > 80) {
-      xylophoneSynth.triggerAttackRelease(targetNote, "32n", undefined, 0.6);
-      currentXyloNote = targetNote;
-      lastXyloTrigger = millis();
-    }
-
-    // 回聲（用平滑後的 X）
-    let feedbackAmt = map(leftHandPos.x, 0, width, 0, 0.5);
-    feedbackAmt = constrain(feedbackAmt, 0, 0.95);
-    delayEffect.feedback.rampTo(feedbackAmt, 0.1);
-  }
-}
-
-function drawVisuals() {
-  noStroke();
-
-  // --- 右手視覺（引力）---
-  if (rightHandIndex !== -1) {
-    if (isPinching) {
-      fill(255, 100, 100, 200);
-      ellipse(rightHandPos.x, rightHandPos.y, 20);
-
-      let holdTime = millis() - holdStartTime;
-      blackHoleStrength = constrain(map(holdTime, 0, 2000, 0.5, 4.0), 0.5, 4.0);
-
-      noFill();
-      stroke(255, 200, 180, 150);
-      strokeWeight(2);
-
-      let visualRadius = blackHoleStrength * 120 + random(-3, 3);
-      ellipse(rightHandPos.x, rightHandPos.y, visualRadius);
-
-      stroke(255, 100, 100, 80);
-      ellipse(rightHandPos.x, rightHandPos.y, visualRadius * 0.7);
-    } else {
-      fill(255, 200, 200, 150);
-      ellipse(rightHandPos.x, rightHandPos.y, 15);
-      blackHoleStrength = lerp(blackHoleStrength, 0, 0.15);
-    }
-  }
-
-  // --- 左手視覺 ---
-  if (leftHandIndex !== -1) {
-    fill(100, 255, 220, 200);
-    ellipse(leftHandPos.x, leftHandPos.y, 20);
-    let delayAmount = map(leftHandPos.x, 0, width, 0, 3);
-    noFill(); stroke(100, 255, 220, 100); strokeWeight(2);
-    ellipse(leftHandPos.x, leftHandPos.y, 60);
-    if (delayAmount > 1) ellipse(leftHandPos.x, leftHandPos.y, 80);
-    if (delayAmount > 2) ellipse(leftHandPos.x, leftHandPos.y, 100);
-    stroke(100, 255, 220, 40);
-    line(0, leftHandPos.y, width, leftHandPos.y);
-  }
-}
-
-function triggerHandpanExplosion() {
-  let holdTime = millis() - holdStartTime;
-  let power = constrain(map(holdTime, 0, 2000, 5, 15), 5, 15);
-  let radius = constrain(map(holdTime, 0, 2000, 150, 350), 150, 350);
-
-  let notes = [random(handpanScale)];
-  if (random() > 0.4) notes.push(random(handpanScale));
-
-  let velocity = map(holdTime, 0, 2000, 0.4, 0.8);
-  handpanSynth.triggerAttackRelease(notes, "1n", undefined, velocity);
-
-  ripples.push(new Ripple(rightHandPos.x, rightHandPos.y, radius));
-  for (let p of particles) p.fireworkExplode(createVector(rightHandPos.x, rightHandPos.y), power, radius);
-}
-
-// ===================== 【新增】裝置連動 =====================
-
-const Y_LOW = 0.9, Y_HIGH = 0.1;   // 陶片最低 → 畫面 90% 高的位置；最高 → 10%（相對座標，任何螢幕都對）
-let grabbedPoints = [];            // 這一格被抓住的陶片光點 {x, y, s}
-let shardNote = [-1, -1, -1, -1, -1];
-let shardNoteAt = [0, 0, 0, 0, 0];
-
-// 畫面左右分成 5 欄：x → 第幾片（1～5）
-function columnAt(x) { return constrain(floor(x / width * Device.N), 0, Device.N - 1) + 1; }
-
-// 第 k 片陶片在畫面上的光點：x = 那一欄的中間，y = 它的實際高度
+// ===== 座標 =====
+const lineY = n => (Y_LOW - (Y_LOW - Y_HIGH) * n / (SCALE.length - 1)) * height;
+const noteAtY = y => constrain(round((Y_LOW - y / height) / (Y_LOW - Y_HIGH) * (SCALE.length - 1)), 0, SCALE.length - 1);
+const columnAt = x => constrain(floor(x / width * Device.N), 0, Device.N - 1) + 1;
 function shardPoint(k) {
   const h = Device.isAlive() ? Device.heightOf(k) : 0;
   return { x: (k - 0.5) / Device.N * width, y: (Y_LOW - (Y_LOW - Y_HIGH) * h) * height };
 }
 
-// 和左手一樣的木琴音階：畫面由下到上
-function noteIndexAtY(y) { return constrain(floor(map(y, height, 0, 0, xyloScale.length)), 0, xyloScale.length - 1); }
+// ===== 星點 =====
+function spawn(first) {
+  const life = random(150, 300);
+  return { x: random(width), y: random(height), vx: 0, vy: 0, size: random(2, 7), col: random(COLORS), life, age: first ? random(life) : 0, boom: 0 };
+}
+function field(x, y, t) { return sin(x * 0.004 + t * 0.2) * 1.7 + cos(y * 0.005 - t * 0.15) * 1.3 + sin((x + y) * 0.002 + t * 0.1); }
+function explode(cx, cy, power, radius) {
+  for (const p of parts) {
+    const dx = p.x - cx, dy = p.y - cy, d = Math.hypot(dx, dy);
+    if (d < radius && d > 0.01) { p.vx = dx / d * power * random(0.8, 1.2); p.vy = dy / d * power * random(0.8, 1.2); p.boom = 45; p.age = 0; }
+  }
+}
 
-function updateDevice() {
-  // 虛擬端的手（左手或右手）在哪一欄 → 實體那一片亮提示燈
-  if (rightHandIndex !== -1) Device.hint(columnAt(rightHandPos.x));
-  if (leftHandIndex !== -1) Device.hint(columnAt(leftHandPos.x));
+// ===== 手：揮手 = 風 =====
+function updateHands() {
+  const now = millis();
+  const seen = [];
+  for (let i = 0; i < hands.length; i++) {
+    const kp = hands[i].keypoints;
+    if (!kp || kp.length < 21) continue;
+    let x = 0, y = 0;
+    for (const j of [0, 5, 9, 13, 17]) { x += kp[j].x; y += kp[j].y; }
+    seen.push({ x: map(x / 5, 0, VIDEO_W, 0, width), y: map(y / 5, 0, VIDEO_H, 0, height) });
+  }
+  // 依距離配對上一格的手，算出速度
+  const next = [];
+  for (const s of seen) {
+    let best = null, bd = 1e9;
+    for (const h of handState) { const d = dist(h.x, h.y, s.x, s.y); if (d < bd && next.indexOf(h) < 0) { bd = d; best = h; } }
+    if (best && bd < 300 * K) {
+      const nx = lerp(best.x, s.x, 0.4), ny = lerp(best.y, s.y, 0.4);
+      best.vx = lerp(best.vx, nx - best.x, 0.5); best.vy = lerp(best.vy, ny - best.y, 0.5);
+      best.x = nx; best.y = ny;
+      next.push(best);
+    } else {
+      next.push({ x: s.x, y: s.y, vx: 0, vy: 0, note: -1, lastPlay: 0, waving: false });
+    }
+  }
+  handState = next;
 
-  grabbedPoints = [];
+  for (const h of handState) {
+    h.waving = Math.hypot(h.vx, h.vy) > WAVE_MIN_SPEED * K;
+    if (!h.waving) continue;
+    const col = columnAt(h.x);
+    Device.hint(col);                                   // 實體那一片亮提示燈
+    hintUntil[col - 1] = now + 2600;
+    const n = noteAtY(h.y);                             // 手的高度彈出音
+    if (n !== h.note && now - h.lastPlay > 80) {
+      play(5, SCALE[n], 0.16, '8n', h.x / width);
+      lineFlash[n] = 1; h.note = n; h.lastPlay = now;
+    }
+  }
+}
+
+function applyWind(p) {
+  for (const h of handState) {
+    if (!h.waving) continue;
+    const dx = p.x - h.x, dy = p.y - h.y, d = Math.hypot(dx, dy), R = WIND_RADIUS * K;
+    if (d > R || d < 1) continue;
+    const f = 1 - d / R;
+    p.vx += h.vx * WIND_POWER * f + dx / d * f * 0.6 * K;   // 順著揮的方向吹，再往外撥開
+    p.vy += h.vy * WIND_POWER * f + dy / d * f * 0.6 * K;
+  }
+}
+
+// ===== 陶片 =====
+function updateShards() {
   if (!Device.isAlive() || !Device.protoOk()) return;
+  const now = millis();
   for (let k = 1; k <= Device.N; k++) {
-    const c = shardPoint(k);
-    if (Device.isGrabbed(k)) grabbedPoints.push({ x: c.x, y: c.y, s: 0.5 + 3.5 * Device.chargeOf(k) });
-    // 陶片升降時，光點越過音階線就輕輕響一聲（被抓住停著時不響）
-    const n = noteIndexAtY(c.y);
+    const c = shardPoint(k), n = noteAtY(c.y);
     if (n !== shardNote[k - 1]) {
-      if (shardNote[k - 1] >= 0 && !Device.isGrabbed(k) && millis() - shardNoteAt[k - 1] > 120) {
-        xylophoneSynth.triggerAttackRelease(xyloScale[n], "32n", undefined, 0.22);
-        shardNoteAt[k - 1] = millis();
+      if (shardNote[k - 1] >= 0 && !Device.isGrabbed(k) && now - shardPlay[k - 1] > 80) {
+        play(k - 1, SCALE[n], n > shardNote[k - 1] ? 0.3 : 0.18, '8n', c.x / width);
+        lineFlash[n] = 1; shardPlay[k - 1] = now;
+        ripples.push({ x: c.x, y: c.y, r: 0, a: 0.6, w: 1.5, sp: 4, fade: 0.03 });
       }
       shardNote[k - 1] = n;
     }
   }
 }
 
-// 放開：在那片的光點炸開星空、彈以它的音為根音的手碟和弦
 function releaseShard(k, charge, answered) {
   const c = shardPoint(k);
-  const power = 5 + 10 * charge;
-  const radius = 150 + 220 * charge;
-  ripples.push(new Ripple(c.x, c.y, radius));
-  if (answered) ripples.push(new Ripple(c.x, c.y, radius * 1.6, 5, 4));   // 回應了提示燈：一圈慢慢擴散的漣漪
-  for (const p of particles) p.fireworkExplode(createVector(c.x, c.y), power, radius);
-  const root = constrain(floor(map(c.y, height, 0, 0, handpanScale.length)), 0, handpanScale.length - 1);
-  const chord = [handpanScale[root]];
-  if (root + 2 < handpanScale.length) chord.push(handpanScale[root + 2]);
-  if (root + 4 < handpanScale.length) chord.push(handpanScale[root + 4]);
-  handpanSynth.triggerAttackRelease(chord, "1n", undefined, 0.4 + 0.4 * charge);
+  ripples.push({ x: c.x, y: c.y, r: 0, a: 1, w: 3, sp: 9, fade: 0.025 });
+  if (answered) ripples.push({ x: c.x, y: c.y, r: 0, a: 0.8, w: 6, sp: 5, fade: 0.012 });
+  explode(c.x, c.y, (5 + 10 * charge) * K, (150 + 220 * charge) * K);
+  const n = noteAtY(c.y);
+  play(k - 1, SCALE[n], 0.35 + 0.45 * charge, '1n', c.x / width);
+  if (n + 2 < SCALE.length) setTimeout(() => play(k - 1, SCALE[n + 2], 0.25 + 0.3 * charge, '1n', c.x / width), 70);
+  if (n + 4 < SCALE.length) setTimeout(() => play(k - 1, SCALE[n + 4], 0.2 + 0.3 * charge, '1n', c.x / width), 140);
 }
 
-// 每片陶片的光點：高度＝y；被抓住時外圈的弧＝蓄力多少（不靠顏色）
-function drawDeviceGlow() {
-  if (!Device.isAlive() || !Device.protoOk()) return;
-  for (let k = 1; k <= Device.N; k++) {
-    const c = shardPoint(k);
-    const grabbed = Device.isGrabbed(k), q = Device.chargeOf(k);
-    noStroke();
-    for (let r = 3; r >= 1; r--) {
-      fill(255, 220, 160, grabbed ? 40 + 50 * q : 22);
-      ellipse(c.x, c.y, (18 + (grabbed ? 40 * q : 0)) * r);
+// ===== 畫面 =====
+function draw() {
+  if (!started) return;
+  const t = millis() / 1000, now = millis();
+  noStroke();
+  fill(10, 10, 30, 51);
+  rect(0, 0, width, height);
+
+  updateHands();
+  updateShards();
+
+  // 亮提示燈的那一欄：整欄淡淡的光
+  const colW = width / Device.N;
+  for (let k = 1; k <= Device.N; k++) if (hintUntil[k - 1] > now) { fill(242, 196, 109, 16); rect((k - 1) * colW, 0, colW, height); }
+
+  // 被抓住的陶片把星點吸過去
+  const sinks = [];
+  if (Device.isAlive() && Device.protoOk()) for (let k = 1; k <= Device.N; k++) if (Device.isGrabbed(k)) sinks.push({ ...shardPoint(k), s: 0.5 + 3.5 * Device.chargeOf(k) });
+
+  noStroke();
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (p.boom > 0) { p.boom--; p.vx *= 0.94; p.vy *= 0.94; }
+    else {
+      const a = field(p.x, p.y, t);
+      p.vx += cos(a) * 0.05 * K; p.vy += sin(a) * 0.05 * K;
+      for (const s of sinks) { const dx = s.x - p.x, dy = s.y - p.y, d = Math.hypot(dx, dy), R = 420 * K; if (d < R && d > 1) { const f = s.s * 1.5 * (1 - d / R) * 0.12 * K; p.vx += dx / d * f; p.vy += dy / d * f; } }
+      applyWind(p);
+      const sp = Math.hypot(p.vx, p.vy), lim = 5 * K;
+      if (sp > lim) { p.vx *= lim / sp; p.vy *= lim / sp; }
+      p.vx *= 0.97; p.vy *= 0.97;
+      if (++p.age > p.life) { parts[i] = spawn(false); continue; }
     }
-    fill(255, 240);
-    ellipse(c.x, c.y, 8);
-    if (grabbed) {
-      noFill(); stroke(255, 220, 170, 220); strokeWeight(2);
-      const R = 36 + 80 * q;
-      arc(c.x, c.y, R, R, -HALF_PI, -HALF_PI + TWO_PI * max(0.02, q));
-    }
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x += width; if (p.x > width) p.x -= width; if (p.y < 0) p.y += height; if (p.y > height) p.y -= height;
+    const al = p.boom > 0 ? 255 : min(1, p.age / 20, (p.life - p.age) / 30) * 204;
+    fill(p.col[0], p.col[1], p.col[2], al);
+    circle(p.x, p.y, p.size * K * 1.8);
+  }
+
+  drawScaleLines();
+  drawShards();
+  drawRipples();
+  drawHands();
+  drawDeviceMap();
+  for (let n = 0; n < lineFlash.length; n++) lineFlash[n] = max(0, lineFlash[n] - deltaTime / 1000 * 2.2);
+}
+
+// 音階線：剛響過的那一條變粗變亮，音名變大
+function drawScaleLines() {
+  textFont('monospace');
+  textAlign(LEFT, CENTER);
+  for (let n = 0; n < SCALE.length; n++) {
+    const y = lineY(n), f = lineFlash[n];
+    stroke(232, 233, 246, 36 + 140 * f); strokeWeight((1 + 3 * f) * K);
+    line(56 * K, y, width, y);
+    noStroke(); fill(232, 233, 246, 140 + 115 * f);
+    textSize(16 * K * (1 + 0.25 * f));
+    text(SCALE[n], 8 * K, y);
   }
 }
 
-// 右下角小圖：一排 5 格，編號、高度條；被抓住的那格加粗外框
+// 每片陶片的光點：x = 那一欄，y = 高度；被抓住時外圈的弧 = 蓄力
+function drawShards() {
+  if (!Device.isAlive() || !Device.protoOk()) return;
+  for (let k = 1; k <= Device.N; k++) {
+    const c = shardPoint(k), grabbed = Device.isGrabbed(k), q = Device.chargeOf(k);
+    stroke(144, 149, 191, 50); strokeWeight(1);
+    drawingContext.setLineDash([4 * K, 6 * K]);
+    line(c.x, Y_HIGH * height, c.x, Y_LOW * height);
+    drawingContext.setLineDash([]);
+    noStroke();
+    const glow = grabbed ? 0.4 + 0.6 * q : (hintUntil[k - 1] > millis() ? 0.5 : 0.15);
+    for (let r = 3; r >= 1; r--) { fill(255, 220, 160, 40 * glow); circle(c.x, c.y, (20 + 30 * glow) * r * K); }
+    fill(232, 233, 246); circle(c.x, c.y, 8 * K + 2);
+    if (grabbed) { noFill(); stroke(255, 220, 170, 200); strokeWeight(2 * K); const R = (36 + 80 * q) * K; arc(c.x, c.y, R, R, -HALF_PI, -HALF_PI + TWO_PI * max(0.02, q)); }
+    noStroke(); fill(232, 233, 246, 220);
+    textFont('monospace'); textSize(18 * K); textAlign(LEFT, BASELINE);
+    text(SCALE[noteAtY(c.y)], c.x + 12 * K, c.y - 10 * K);
+    textFont('sans-serif'); textSize(20 * K); textAlign(CENTER, BASELINE);
+    text(k, c.x, 0.965 * height);
+  }
+}
+
+function drawRipples() {
+  noFill();
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.r += r.sp * K; r.a -= r.fade;
+    if (r.a <= 0) { ripples.splice(i, 1); continue; }
+    stroke(242, 214, 160, 255 * r.a); strokeWeight(r.w * K);
+    circle(r.x, r.y, r.r * 2);
+  }
+}
+
+// 手：一圈＋音名；在揮的時候外圈變大
+function drawHands() {
+  textFont('monospace'); textSize(18 * K); textAlign(LEFT, CENTER);
+  for (const h of handState) {
+    noFill(); stroke(143, 227, 210, h.waving ? 200 : 90); strokeWeight(2 * K);
+    circle(h.x, h.y, (h.waving ? 120 : 60) * K);
+    noStroke(); fill(232, 233, 246, 220);
+    text('手 ' + SCALE[noteAtY(h.y)], h.x + 66 * K, h.y);
+  }
+  stroke(144, 149, 191, 40); strokeWeight(1);
+  for (let i = 1; i < Device.N; i++) line(i * width / Device.N, 0, i * width / Device.N, height);
+}
+
+// 右下角：裝置狀態＋一排 5 格高度（被抓住的那格加粗外框，不靠顏色）
 function drawDeviceMap() {
-  const s = 30, gap = 4, pad = 14;
-  const w = s * Device.N + gap * (Device.N - 1);
+  const s = 30, gap = 4, pad = 14, w = s * Device.N + gap * (Device.N - 1);
   const x0 = width - w - pad, y0 = height - s - pad - 96;
   push();
-  textFont('sans-serif');
-  textSize(11);
-  noStroke();
-  fill(255, 160);
-  textAlign(RIGHT, BOTTOM);
+  textFont('sans-serif'); textSize(11); noStroke(); fill(255, 160); textAlign(RIGHT, BOTTOM);
   let status;
   if (!Device.connected) status = '裝置：未連接';
-  else if (!Device.isAlive()) status = '裝置：沒有回應（剛連線請等 3 秒）';
-  else if (!Device.protoOk()) status = '裝置：韌體版本不對（' + Device.firmware + '），請上傳 Row5TouchWave';
-  else if (Device.error > 1) status = '裝置：錯誤碼 ' + Device.error;
+  else if (!Device.isAlive()) status = '裝置：沒有回應';
+  else if (!Device.protoOk()) status = '裝置：韌體版本不對（' + Device.firmware + '）';
   else status = '裝置：正常 ' + Device.firmware;
   text(status, x0 + w, y0 - 6);
-
+  const ok = Device.isAlive() && Device.protoOk();
   for (let k = 1; k <= Device.N; k++) {
-    const x = x0 + (k - 1) * (s + gap), y = y0;
-    const ok = Device.isAlive() && Device.protoOk();
-    const h = ok ? Device.heightOf(k) : 0;
-    stroke(255, 90); strokeWeight(1); noFill();
-    rect(x, y, s, s);
-    noStroke();
-    fill(255, 200);
-    rect(x + 1, y + s - 1 - (s - 2) * h, s - 2, (s - 2) * h);
+    const x = x0 + (k - 1) * (s + gap), y = y0, h = ok ? Device.heightOf(k) : 0;
+    stroke(255, 90); strokeWeight(1); noFill(); rect(x, y, s, s);
+    noStroke(); fill(255, 200); rect(x + 1, y + s - 1 - (s - 2) * h, s - 2, (s - 2) * h);
     fill(255, 230); textAlign(LEFT, TOP); text(k, x + 3, y + 2);
     if (ok && Device.isGrabbed(k)) { noFill(); stroke(255); strokeWeight(3); rect(x - 3, y - 3, s + 6, s + 6); }
   }
   pop();
 }
 
-// ===================== 粒子 =====================
-class Particle {
-  constructor(x, y, first = false) {
-    this.pos = createVector(x, y);
-    this.vel = p5.Vector.random2D().mult(0.2);
-    this.acc = createVector(0, 0);
-    this.size = random(4, 12);
-    this.color = color(...random(starryColors));
-    this.exploding = false;
-    this.explodeTimer = 0;
-    this.scaleFactor = 1;
-    this.maxLife = random(150, 300);
-    this.age = first ? random(this.maxLife) : 0;
-    this.alpha = first ? 200 : 0;
-  }
-
-  respawn() {
-    this.pos.set(random(width), random(height));
-    this.vel = p5.Vector.random2D().mult(0.2);
-    this.acc.set(0, 0);
-    this.age = 0; this.alpha = 0; this.exploding = false;
-  }
-
-  follow(v) {
-    if (!this.exploding) {
-      let x = floor(this.pos.x / scl);
-      let y = floor(this.pos.y / scl);
-      let i = x + y * cols;
-      if (i >= 0 && i < v.length) this.acc.add(v[i]);
-    }
-  }
-
-  applyAttraction(tx, ty, s) {
-    if (this.exploding || s < 0.1) return;
-    let dx = tx - this.pos.x;
-    let dy = ty - this.pos.y;
-    let dSq = dx * dx + dy * dy;
-    const attractionRadius = 450;
-    if (dSq < attractionRadius * attractionRadius) {
-      let d = Math.sqrt(dSq);
-      let force = map(d, 0, attractionRadius, s * 1.5, 0);
-      this.acc.add((dx / d) * force, (dy / d) * force);
-    }
-  }
-
-  applyRepulsion(tx, ty, r) {
-    if (this.exploding) return;
-    let dx = this.pos.x - tx;
-    let dy = this.pos.y - ty;
-    let dSq = dx * dx + dy * dy;
-    if (dSq < r * r) {
-      let d = Math.sqrt(dSq);
-      let force = map(d, 0, r, 1.5, 0);
-      this.acc.add((dx / d) * force, (dy / d) * force);
-    }
-  }
-
-  fireworkExplode(o, p, r) {
-    if (this.pos.dist(o) > r) return;
-    this.exploding = true;
-    this.explodeTimer = 45;
-    let dir = p5.Vector.sub(this.pos, o).normalize();
-    this.vel = dir.mult(random(p * 0.8, p * 1.2));
-    this.age = 0;
-    this.alpha = 255;
-  }
-
-  update() {
-    if (!this.exploding) {
-      this.age++;
-      if (this.age > this.maxLife) { this.respawn(); return; }
-      if (this.age < 20) this.alpha = map(this.age, 0, 20, 0, 200);
-      else if (this.age > this.maxLife - 30) this.alpha = map(this.age, this.maxLife - 30, this.maxLife, 200, 0);
-      else this.alpha = 200;
-      this.vel.add(this.acc);
-      this.vel.limit(1.2);
-    } else {
-      this.explodeTimer--;
-      this.vel.mult(0.94);
-      if (this.explodeTimer <= 0) this.exploding = false;
-    }
-    this.pos.add(this.vel);
-    this.acc.set(0, 0);
-    if (this.pos.x < -20) this.pos.x = width + 20;
-    if (this.pos.x > width + 20) this.pos.x = -20;
-    if (this.pos.y < -20) this.pos.y = height + 20;
-    if (this.pos.y > height + 20) this.pos.y = -20;
-  }
-
-  show() {
-    strokeWeight(this.size * (this.exploding ? this.scaleFactor : 1));
-    stroke(red(this.color), green(this.color), blue(this.color), this.alpha);
-    point(this.pos.x, this.pos.y);
-  }
-}
-
-class Ripple {
-  // 【新增】speed、fade 可以調（預設和原作一樣）；回應了提示燈的漣漪用比較慢的
-  constructor(x, y, r, speed = 12, fade = 8) { this.x = x; this.y = y; this.r = 0; this.al = 255; this.maxR = r; this.speed = speed; this.fade = fade; }
-  update() { this.r += this.speed; this.al -= this.fade; }
-  show() { noFill(); stroke(200, 200, 255, this.al); strokeWeight(3); ellipse(this.x, this.y, this.r); }
-  finished() { return this.al <= 0; }
-}
-
 function keyPressed() {
   if (key === 'f' || key === 'F') fullscreen(!fullscreen());
-  if (key === 'Escape') fullscreen(false);
-}
-
-function initFlowField() {
-  cols = floor(width / scl) + 1;
-  rows = floor(height / scl) + 1;
-  flowField = new Array(cols * rows);
-  for (let i = 0; i < flowField.length; i++) flowField[i] = createVector(0, 0);
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  initFlowField();
+  K = width / 1200;
 }
