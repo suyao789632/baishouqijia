@@ -14,7 +14,7 @@ const Device = {
   HINT_EVERY_MS: 300,     // 同一欄最快多久送一次提示
   GRAB_MAX_MS: 30000,
 
-  wave: { on: true, period: 8, amp: 0.75, phase: 0.16, maxh: 0.9 },
+  wave: { on: true, period: 8, amp: 0.95, phase: 0.2, maxh: 0.95 },   // 和 Mega 物聯網版一樣（2026-11-04 加大）
 
   connected: false, error: 0, mode: 0, firmware: 'MQTT', proto: 3,
   deviceOnline: false,
