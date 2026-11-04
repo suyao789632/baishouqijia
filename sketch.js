@@ -6,7 +6,7 @@
 //   鏡頭看到手在「揮」→ 手的動作吹出一陣風，把星點往揮的方向吹開（不分左右手，兩隻手都可以）
 //   手在畫面哪一欄（左右分 5 欄）→ 實體那一片亮提示燈，邀請現場的人來抓
 //   手的高度 → 畫面由下到上是一條音階，手經過哪一條線就彈出那個音
-//   每片陶片在畫面上是一顆光點：x = 它那一欄，y = 它的高度；光點經過音階線也會響
+//   每片陶片在畫面上是一顆光點：x = 它那一欄，y = 它的高度；有人捏過陶片後 15 秒內，光點經過音階線才會響
 //   現場有人抓住陶片 → 那顆光點把星點吸過去（越抓越久吸越強，外圈的弧 = 蓄力）
 //   放開 → 在那顆光點炸開星空＋和弦；如果抓的時候提示燈正亮著（回應了對方），多一圈慢慢擴散的漣漪
 // 裝置連線用 Device（USB 版 device.js、Apps Script 版 Remote、MQTT 版 remote_mqtt.js 都可以，用法一樣）。
@@ -18,6 +18,7 @@ const Y_LOW = 0.9, Y_HIGH = 0.1;         // 陶片最低 → 畫面 90% 高；�
 const WAVE_MIN_SPEED = 6;                 // 手每一格移動超過這麼多像素才算「在揮」
 const WIND_RADIUS = 260;                  // 風吹得到的範圍（以 1200 寬的畫面為準）
 const WIND_POWER = 0.09;                  // 風力
+const AWAKE_MS = 15000;                   // 有人捏過陶片後，陶片光點經過音階線才會響，持續這麼久（沒人捏就安靜）
 const SCALE = ['D3', 'A3', 'Bb3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'C5'];   // 手碟 D Kurd
 const COLORS = [[25, 25, 112], [65, 105, 225], [30, 191, 255], [255, 215, 0], [255, 140, 0], [72, 61, 139]];
 
@@ -28,6 +29,7 @@ let lineFlash = new Array(SCALE.length).fill(0);
 let handState = [];                        // 每隻手：{x, y, vx, vy, note, lastPlay, waving}
 let shardNote = [-1, -1, -1, -1, -1], shardPlay = [0, 0, 0, 0, 0];
 let hintUntil = [0, 0, 0, 0, 0];
+let lastTouch = -1e9;                      // 最後一次有人捏／放陶片的時間
 let voices = null;
 let K = 1;                                 // 畫面縮放（以 1200 寬為準）
 
@@ -60,8 +62,8 @@ function setup() {
     else if (await Device.connect()) devBtn.textContent = '中斷裝置';
   };
 
-  Device.onGrab = (k) => { if (started) { const c = shardPoint(k); ripples.push({ x: c.x, y: c.y, r: 0, a: 0.8, w: 2, sp: 6, fade: 0.03 }); } };
-  Device.onRelease = (k, charge, answered) => { if (started) releaseShard(k, charge, answered); };
+  Device.onGrab = (k) => { lastTouch = millis(); if (started) { const c = shardPoint(k); ripples.push({ x: c.x, y: c.y, r: 0, a: 0.8, w: 2, sp: 6, fade: 0.03 }); } };
+  Device.onRelease = (k, charge, answered) => { lastTouch = millis(); if (started) releaseShard(k, charge, answered); };
 }
 
 const MASTER_DB = 6;   // 總音量（dB），還不夠大聲就再加，破音就減
@@ -171,7 +173,7 @@ function updateShards() {
   for (let k = 1; k <= Device.N; k++) {
     const c = shardPoint(k), n = noteAtY(c.y);
     if (n !== shardNote[k - 1]) {
-      if (shardNote[k - 1] >= 0 && !Device.isGrabbed(k) && now - shardPlay[k - 1] > 80) {
+      if (shardNote[k - 1] >= 0 && !Device.isGrabbed(k) && now - lastTouch < AWAKE_MS && now - shardPlay[k - 1] > 80) {
         play(k - 1, SCALE[n], n > shardNote[k - 1] ? 0.5 : 0.32, '8n', c.x / width);
         lineFlash[n] = 1; shardPlay[k - 1] = now;
         ripples.push({ x: c.x, y: c.y, r: 0, a: 0.6, w: 1.5, sp: 4, fade: 0.03 });
