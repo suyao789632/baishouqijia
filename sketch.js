@@ -64,11 +64,14 @@ function setup() {
   Device.onRelease = (k, charge, answered) => { if (started) releaseShard(k, charge, answered); };
 }
 
+const MASTER_DB = 6;   // 總音量（dB），還不夠大聲就再加，破音就減
+
 // ===== 聲音：每片陶片一個聲部，加一個給手；左右聲道跟著 x =====
 function setupSound() {
   if (voices) return;
   const limiter = new Tone.Limiter(-1).toDestination();
-  const reverb = new Tone.Reverb({ decay: 4, wet: 0.45 }).connect(limiter);
+  const master = new Tone.Volume(MASTER_DB).connect(limiter);   // 總音量：MASTER_DB 越大越大聲
+  const reverb = new Tone.Reverb({ decay: 4, wet: 0.45 }).connect(master);
   voices = [];
   for (let i = 0; i < 6; i++) {
     const pan = new Tone.Panner(0).connect(reverb);
@@ -76,7 +79,7 @@ function setupSound() {
       maxPolyphony: 4, oscillator: { type: i === 5 ? 'triangle' : 'sine' },
       envelope: { attack: 0.01, decay: 0.8, sustain: 0.05, release: 1.8 },
     }).connect(pan);
-    s.volume.value = -9;
+    s.volume.value = -4;     // 原本 -9（2026-11-04 調大聲）
     voices.push({ s, pan });
   }
 }
@@ -144,7 +147,7 @@ function updateHands() {
     hintUntil[col - 1] = now + 2600;
     const n = noteAtY(h.y);                             // 手的高度彈出音
     if (n !== h.note && now - h.lastPlay > 80) {
-      play(5, SCALE[n], 0.16, '8n', h.x / width);
+      play(5, SCALE[n], 0.32, '8n', h.x / width);
       lineFlash[n] = 1; h.note = n; h.lastPlay = now;
     }
   }
@@ -169,7 +172,7 @@ function updateShards() {
     const c = shardPoint(k), n = noteAtY(c.y);
     if (n !== shardNote[k - 1]) {
       if (shardNote[k - 1] >= 0 && !Device.isGrabbed(k) && now - shardPlay[k - 1] > 80) {
-        play(k - 1, SCALE[n], n > shardNote[k - 1] ? 0.3 : 0.18, '8n', c.x / width);
+        play(k - 1, SCALE[n], n > shardNote[k - 1] ? 0.5 : 0.32, '8n', c.x / width);
         lineFlash[n] = 1; shardPlay[k - 1] = now;
         ripples.push({ x: c.x, y: c.y, r: 0, a: 0.6, w: 1.5, sp: 4, fade: 0.03 });
       }
