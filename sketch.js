@@ -40,10 +40,7 @@ function preload() {
 function setup() {
   createCanvas(windowWidth, windowHeight);
   K = width / 1200;
-  video = createCapture(VIDEO);
-  video.size(VIDEO_W, VIDEO_H);
-  video.hide();
-  handPose.detectStart(video, r => { hands = r; });
+  startCamera();                           // 外接、內建鏡頭都可以用（見下面 startCamera）
   for (let i = 0; i < PARTICLES; i++) parts.push(spawn(true));
   background(10, 10, 30);
 
@@ -67,6 +64,94 @@ function setup() {
 }
 
 const MASTER_DB = 6;   // 總音量（dB），還不夠大聲就再加，破音就減
+
+// ===== 鏡頭：外接、內建都可以用 =====
+// 開啟時自動選：上次手動選過的那台 → 外接鏡頭（名字有 Logi／C270，或不是 ASUS／內建）→ 內建鏡頭。
+// 左下角有「鏡頭」選單可以隨時切換（有兩台以上才出現），也可以按 C 輪流切換。
+// 中途插上外接鏡頭會自動換過去；正在用的鏡頭被拔掉，會自動換回另一台。
+// 紅外線鏡頭（IR camera，臉部解鎖用）一律不用。
+const BUILT_IN = /asus|integrated|built-in|內建|facetime/i;
+const CAM_KEY = 'baishou-camera';
+let cams = [], camId = '', camSelect = null, camSwitching = false;
+
+function savedCam() { try { return localStorage.getItem(CAM_KEY) || ''; } catch (e) { return ''; } }
+function saveCam(id) { try { localStorage.setItem(CAM_KEY, id); } catch (e) {} }
+function isExternal(d) { return /logi|c270/i.test(d.label) || !BUILT_IN.test(d.label); }
+
+async function listCams() {
+  const all = await navigator.mediaDevices.enumerateDevices();
+  cams = all.filter(d => d.kind === 'videoinput' && !/ir camera|infrared/i.test(d.label));
+  if (!camSelect) {
+    camSelect = document.createElement('select');
+    camSelect.title = '選擇鏡頭';
+    camSelect.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:100;max-width:240px;padding:6px 10px;font-size:13px;' +
+      'color:#e8e9f6;background:rgba(20,20,40,0.7);border:1px solid rgba(255,255,255,0.3);border-radius:14px;';
+    camSelect.onchange = () => { saveCam(camSelect.value); useCam(camSelect.value); };
+    document.body.appendChild(camSelect);
+  }
+  camSelect.innerHTML = cams.map((d, i) => `<option value="${d.deviceId}">鏡頭：${d.label || '鏡頭 ' + (i + 1)}</option>`).join('');
+  camSelect.value = camId;
+  camSelect.style.display = cams.length > 1 ? 'block' : 'none';
+}
+
+function pickCam() {
+  const saved = savedCam();
+  if (saved && cams.some(d => d.deviceId === saved)) return saved;
+  const ext = cams.find(d => /logi|c270/i.test(d.label)) || cams.find(isExternal);
+  return (ext || cams[0] || {}).deviceId || '';
+}
+
+async function useCam(id) {
+  if (camSwitching) return;
+  camSwitching = true;
+  try {
+    try { handPose.detectStop(); } catch (e) {}
+    if (video) {
+      const s = video.elt && video.elt.srcObject;
+      if (s) s.getTracks().forEach(t => t.stop());
+      video.remove();
+    }
+    hands = [];
+    camId = id;
+    const constraints = id ? { video: { deviceId: { exact: id } }, audio: false } : { video: true, audio: false };
+    video = createCapture(constraints);
+    video.size(VIDEO_W, VIDEO_H);
+    video.hide();
+    handPose.detectStart(video, r => { hands = r; });
+    if (camSelect) camSelect.value = id;
+    const d = cams.find(c => c.deviceId === id);
+    console.log('使用鏡頭：', d ? d.label : '預設');
+  } finally { camSwitching = false; }
+}
+
+async function startCamera() {
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ video: true });   // 先拿到權限，才看得到鏡頭名字
+    tmp.getTracks().forEach(t => t.stop());
+    await listCams();
+    console.log('鏡頭清單：', cams.map(d => d.label).join('、'));
+    await useCam(pickCam());
+    navigator.mediaDevices.addEventListener('devicechange', async () => {
+      const before = cams.map(d => d.deviceId);
+      await listCams();
+      const added = cams.find(d => !before.includes(d.deviceId));
+      if (!cams.some(d => d.deviceId === camId)) await useCam(pickCam());          // 正在用的被拔掉
+      else if (added && isExternal(added) && !savedCam()) await useCam(added.deviceId);   // 插上外接鏡頭
+    });
+  } catch (e) {
+    console.warn('看不到鏡頭清單，改用預設鏡頭', e);
+    await useCam('');
+  }
+}
+
+// 按 C：輪流切換鏡頭
+window.addEventListener('keydown', e => {
+  if ((e.key === 'c' || e.key === 'C') && cams.length > 1 && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) {
+    const i = cams.findIndex(d => d.deviceId === camId);
+    const next = cams[(i + 1) % cams.length].deviceId;
+    saveCam(next); useCam(next);
+  }
+});
 
 // ===== 聲音：每片陶片一個聲部，加一個給手；左右聲道跟著 x =====
 function setupSound() {
